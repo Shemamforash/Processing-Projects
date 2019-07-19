@@ -3,7 +3,6 @@ private final color _backgroundColour = GreyscaleColor(20);
 private final color _sunColour = GreyscaleColor(240);
 private final color _glowColour = GreyscaleColor(40);
 private final color _minPlanetColour = GreyscaleColor(55);
-private final color _maxPlanetColour = GreyscaleColor(100);
 private final float _minPlanetSize = 5;
 private final float _maxPlanetSize = 15;
 private final String[] _names = {"anathema", "imperium", "golgotha", "hyperion", "balthazer", "sephiroth", "pelinnor", "jezebel", "babylon"
@@ -13,46 +12,76 @@ private final String[] _names = {"anathema", "imperium", "golgotha", "hyperion",
 private final String[] _numbers = {"", "", "", "", "", "", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"};
 
 private String _currentName;
+private float _systemWidth;
 private float _xCenter;
 private float _yCenter;
 private float _sunWidth;
 private PImage _glow;
+private float[] _orbitWidths;
 
 public void setup() {
   fullScreen(P2D);
+  smooth(4);
   pixelDensity(2);
   noStroke();
   Initialise();
+  CalculateOrbitWidths();
 }
 
 void mouseClicked() {
   Initialise();
 }
 
+private color GetBodyColor(float distance){
+  float normalisedDistance = distance / _systemWidth;
+  if(normalisedDistance > 1) normalisedDistance = 1;
+  return lerpColor(_sunColour, _minPlanetColour, normalisedDistance);
+}
+
+private void CalculateOrbitWidths() {
+  int planetCount = (int)random(3, 10);
+  int widthIntervals =  planetCount * 5;
+  _orbitWidths = new float[planetCount];
+  for (int i = 0; i < widthIntervals; ++i) {
+    int selectedPlanet = (int)random(0, planetCount);
+    _orbitWidths[selectedPlanet]++;
+  }
+  float startOrbit = 50;
+  float endOrbit = random(_systemWidth - 200, _systemWidth);
+  if (endOrbit < startOrbit) endOrbit = startOrbit + 50;
+  float actualSystemWidth = endOrbit - startOrbit;
+  for (int i = 0; i < planetCount; ++i) {
+    _orbitWidths[i] /= widthIntervals;
+    _orbitWidths[i] *= actualSystemWidth;
+  }
+}
+
 private void Initialise() {
   _bodies.clear();
   _xCenter = width / 2f;
   _yCenter = height / 2f;
-  _sunWidth = random(30, 50);
-  float _currentRadius = random(_sunWidth + 20, _sunWidth + 60);
+  _systemWidth = min(_xCenter, _yCenter) - 150;
+  _sunWidth = random(30, 75);
+  CalculateOrbitWidths();
+  float currentRadius = _sunWidth + random(10, 30);
   int beltCount = 0;
-  int maxPlanets = (int)random(3, 9);
-  float maxPlanetsNormalised = (maxPlanets - 3f) / 6f;
-  float planetGapMult = ((1 - maxPlanetsNormalised) + 1) * _maxPlanetSize;
-  while (maxPlanets > 0 && _currentRadius < _yCenter - 150) {
-    float size = random(_minPlanetSize, _maxPlanetSize);
-    float speed = random(size / _currentRadius, size / _currentRadius * 2);
+  for (int i = 0; i < _orbitWidths.length; ++i) {
+    float orbitWidth = currentRadius + _orbitWidths[i];
+    float orbitRadius = currentRadius + _orbitWidths[i]/2f;
+    float size = random(orbitWidth / 30f, orbitWidth / 20f);
+    float speed = random(size / currentRadius, size / currentRadius * 2);
     float beltChance =(beltCount + 1) * 4;
     if (random(0, beltChance) < 1) {
       ++beltCount;
-      CreateBelt(_currentRadius, size);
+      CreateBelt(orbitRadius, size);
       size *= 2f;
     } else {
-      _bodies.add(new Planet(new Vector2(_xCenter, _yCenter), size, speed, _currentRadius));
+      Planet planet = new Planet(new Vector2(_xCenter, _yCenter), size, speed, orbitRadius, true);
+      _bodies.add(planet);
     }
-    _currentRadius += random(planetGapMult, planetGapMult * 5f);
-    --maxPlanets;
+    currentRadius = orbitWidth;
   }
+
   CreateGlow();
   String name = _names[(int)random(0, _names.length)];
   name += " " + _numbers[(int)random(0, _numbers.length)];
@@ -71,11 +100,13 @@ private void CreateBelt(float currentRadius, float size) {
   float beltWidth = random(size / 3f, size);
   int beltCount = (int)random(beltWidth * 5, beltWidth * 10);
   for (int i = 0; i < beltCount; ++i) {
-    float orbitRadius = currentRadius + random(-beltWidth, beltWidth);
+    float randomNormalised = random(0, 1);
+    randomNormalised *= randomNormalised;
+    randomNormalised *= beltWidth;
+    float orbitRadius = currentRadius + random(-randomNormalised, randomNormalised);
     float bodySize = random(1, 2);
     float bodySpeed = random(0.01f, 0.03f);
     Body body = new Body(new Vector2(_xCenter, _yCenter), bodySize, bodySpeed, orbitRadius);
-    body.PlanetColour = GreyscaleColor((int)random(180, 200));
     _bodies.add(body);
   }
 }
@@ -92,11 +123,15 @@ public void draw() {
 private void DrawText() {
   fill(_sunColour);
   stroke(_sunColour);
-  float xWidth = (_currentName.length() * 20) / 2f;
-  line(_xCenter - xWidth, height - 100, _xCenter + xWidth, height - 100);
-  textSize(40);
+  float textScale = height / 1080f;
+  float textSize = textScale * 40;
+  float xWidth = (_currentName.length() * textSize) / 2.5f;
+  float lineOffset = 100 * textScale;
+  float textOffset = 85 * textScale;
+  line(_xCenter - xWidth, height - lineOffset, _xCenter + xWidth, height - lineOffset);
+  textSize(textSize);
   textAlign(CENTER, TOP);
-  text(_currentName, _xCenter, height - 85);
+  text(_currentName, _xCenter, height - textOffset);
 }
 
 private void DrawSun() {
@@ -114,8 +149,10 @@ void CreateGlow() {
       float yDiff = y - _yCenter;
       float distance = xDiff * xDiff + yDiff * yDiff;
       distance = sqrt(distance);
-      float lerpVal = distance / 300f;
-      if (lerpVal > 1) lerpVal = 1;
+      float lerpVal = distance / _systemWidth;
+      lerpVal += random(-0.02f, 0.02f);
+      if(lerpVal < 0) lerpVal = 0;
+      else if (lerpVal > 1) lerpVal = 1;
       color bgColour = lerpColor(_glowColour, _backgroundColour, lerpVal);
       _glow.set(x, y, bgColour);
     }
@@ -170,6 +207,7 @@ class Body {
     _size = size;
     _speed = speed;
     _orbitRadius = orbitRadius;
+     PlanetColour = GetBodyColor(_orbitRadius);
     _currentAngle = random(0, 360);
   }
 
@@ -200,14 +238,14 @@ class Planet extends Body {
   private float _pathLength;
   private ArrayList<Ring> _rings = new ArrayList<Ring>();
 
-  public Planet(Vector2 origin, float size, float speed, float orbitRadius) {
+  public Planet(Vector2 origin, float size, float speed, float orbitRadius, boolean createSatellites) {
     super(origin, size, speed, orbitRadius);
     float lerpVal = (size - _minPlanetSize) / (_maxPlanetSize - _minPlanetSize);
     if (lerpVal > 1) lerpVal = 1;
-    PlanetColour = lerpColor(_minPlanetColour, _maxPlanetColour, 1 - lerpVal);
     int colourVal = (int)lerp(120, 180, lerpVal);
     _fadedRingColour = GreyscaleColor(colourVal, 0);
     _pathLength = random(45, 360);
+    if(!createSatellites) return;
     CheckToCreateSatellites();
   }
 
@@ -226,21 +264,18 @@ class Planet extends Body {
       float size = random(2, 4);
       float speed = random(-0.5f, 0.5f);
       radius += random(size + 1, size + 3);
-      Body moon = new Body(Position, size, speed, radius);
+      Planet moon = new Planet(Position, size, speed, radius, false);
       moon.PlanetColour = PlanetColour; 
       _bodies.add(moon);
     }
   }
 
   private void CreateRings() {
-    int ringCount = (int)floor(random(1, 5));
-    float maxWidth = 25 / ringCount;
-    float radius = _size / 2f + random(2, 5);
+    int ringCount = (int)floor(random(1, 3));
+    float radius = _size + random(5, 10);
     for (int i = 0; i < ringCount; ++i) {
-      float size = maxWidth;
-      if(size > 3) size = 3;
-      size = random(1, size);
-      radius += random(size + 3, size + 5);
+      float size = random(1, 2);
+      radius += random(size + 5, size + 10);
       Ring ring = new Ring(Position, size, radius);
       ring.Colour = PlanetColour; 
       _rings.add(ring);
@@ -248,11 +283,11 @@ class Planet extends Body {
   }
 
   public void Draw() {
+    super.Draw();
     DrawOrbitPath();
-    for(Ring ring : _rings){
+    for (Ring ring : _rings) {
       ring.Draw();
     }
-    super.Draw();
   }
 
   private void DrawOrbitPath() {
@@ -260,8 +295,11 @@ class Planet extends Body {
     strokeWeight(1);
     beginShape();
     for (float angleOffset = 0; angleOffset < _pathLength; ++angleOffset) {
-      float currentX = GetX(_currentAngle - angleOffset);
-      float currentY = GetY(_currentAngle - angleOffset);
+      float angle = _currentAngle;
+      if(_speed < 0) angle += angleOffset;
+      else angle -= angleOffset;
+      float currentX = GetX(angle);
+      float currentY = GetY(angle);
       float lerpVal = angleOffset / _pathLength;
       color lineColour = lerpColor(PlanetColour, _fadedRingColour, lerpVal);
       stroke(lineColour);
